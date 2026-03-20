@@ -3,87 +3,99 @@ import SwiftUI
 struct MediaPlayerView: View {
     @ObservedObject var viewModel: MediaViewModel
 
-    private var isCompact: Bool { viewModel.sourceCount > 1 }
-
     var body: some View {
         Group {
-            if isCompact {
-                compactLayout
-            } else {
-                expandedLayout
+            if !viewModel.isToolInstalled {
+                notInstalledView
+            } else if let info = viewModel.nowPlaying {
+                playerView(info: info)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
+            // When installed but nothing playing: show nothing
         }
-        .animation(.spring(response: 0.35, dampingFraction: 0.72), value: viewModel.sourceCount)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: viewModel.nowPlaying != nil)
     }
 
-    // MARK: - Expanded Layout (single source)
+    // MARK: - Not Installed
 
-    private var expandedLayout: some View {
+    private var notInstalledView: some View {
+        VStack(spacing: 8) {
+            Text("Media detection requires media-control")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.white.opacity(0.7))
+                .multilineTextAlignment(.center)
+
+            Text("brew install ungive/tap/media-control")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(.white.opacity(0.9))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(4)
+                .textSelection(.enabled)
+
+            Button(action: viewModel.recheckInstallation) {
+                Text("Check Again")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(0.15))
+                    .cornerRadius(4)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(8)
+    }
+
+    // MARK: - Player
+
+    private func playerView(info: NowPlayingInfo) -> some View {
         HStack(spacing: 12) {
-            artworkView
+            artworkView(artwork: info.artwork)
                 .frame(width: 80, height: 80)
-                .cornerRadius(8)
+                .cornerRadius(10)
 
             VStack(alignment: .leading, spacing: 4) {
-                if viewModel.nowPlaying.hasContent {
-                    MarqueeText(text: viewModel.nowPlaying.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white)
-                        .accessibilityLabel("Track: \(viewModel.nowPlaying.title)")
+                MarqueeText(text: info.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                    .accessibilityLabel("Track: \(info.title)")
 
-                    Text(viewModel.nowPlaying.artist)
-                        .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.7))
-                        .lineLimit(1)
-                        .accessibilityLabel("Artist: \(viewModel.nowPlaying.artist)")
-                } else {
-                    Text("No media playing")
-                        .font(.system(size: 13))
-                        .foregroundColor(.white.opacity(0.5))
-                }
+                Text(artistAlbumText(info: info))
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.7))
+                    .lineLimit(1)
+                    .accessibilityLabel("Artist: \(info.artist)")
 
                 Spacer(minLength: 2)
 
-                progressBar
+                progressBar(fraction: info.progress)
 
-                expandedControls
+                controlButtons(isPlaying: info.isPlaying)
             }
         }
         .padding(8)
     }
 
-    // MARK: - Compact Layout (multiple sources)
-
-    private var compactLayout: some View {
-        HStack(spacing: 8) {
-            artworkView
-                .frame(width: 36, height: 36)
-                .cornerRadius(4)
-
-            Text(viewModel.nowPlaying.title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.white)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            compactControls
+    private func artistAlbumText(info: NowPlayingInfo) -> String {
+        if !info.album.isEmpty {
+            return "\(info.artist) – \(info.album)"
         }
-        .frame(height: 48)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        return info.artist
     }
 
     // MARK: - Artwork
 
     @ViewBuilder
-    private var artworkView: some View {
-        if let artwork = viewModel.nowPlaying.artwork {
+    private func artworkView(artwork: NSImage?) -> some View {
+        if let artwork {
             Image(nsImage: artwork)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
                 .accessibilityLabel("Album artwork")
         } else {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 10)
                 .fill(Color.white.opacity(0.1))
                 .overlay(
                     Image(systemName: "music.note")
@@ -95,7 +107,7 @@ struct MediaPlayerView: View {
 
     // MARK: - Progress Bar
 
-    private var progressBar: some View {
+    private func progressBar(fraction: Double) -> some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 2)
@@ -105,18 +117,18 @@ struct MediaPlayerView: View {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(Color.white.opacity(0.8))
                     .frame(
-                        width: geometry.size.width * viewModel.nowPlaying.progress,
+                        width: geometry.size.width * fraction,
                         height: 3
                     )
             }
         }
         .frame(height: 3)
-        .accessibilityValue("\(Int(viewModel.nowPlaying.progress * 100))% played")
+        .accessibilityValue("\(Int(fraction * 100))% played")
     }
 
-    // MARK: - Expanded Controls (prev + play/pause + next)
+    // MARK: - Controls
 
-    private var expandedControls: some View {
+    private func controlButtons(isPlaying: Bool) -> some View {
         HStack(spacing: 20) {
             Spacer()
 
@@ -129,12 +141,12 @@ struct MediaPlayerView: View {
             .accessibilityLabel("Previous track")
 
             Button(action: viewModel.togglePlayPause) {
-                Image(systemName: viewModel.nowPlaying.isPlaying ? "pause.fill" : "play.fill")
+                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 18))
                     .foregroundColor(.white)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(viewModel.nowPlaying.isPlaying ? "Pause" : "Play")
+            .accessibilityLabel(isPlaying ? "Pause" : "Play")
 
             Button(action: viewModel.nextTrack) {
                 Image(systemName: "forward.fill")
@@ -145,28 +157,6 @@ struct MediaPlayerView: View {
             .accessibilityLabel("Next track")
 
             Spacer()
-        }
-    }
-
-    // MARK: - Compact Controls (play/pause + next only)
-
-    private var compactControls: some View {
-        HStack(spacing: 12) {
-            Button(action: viewModel.togglePlayPause) {
-                Image(systemName: viewModel.nowPlaying.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 14))
-                    .foregroundColor(.white)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(viewModel.nowPlaying.isPlaying ? "Pause" : "Play")
-
-            Button(action: viewModel.nextTrack) {
-                Image(systemName: "forward.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(.white)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Next track")
         }
     }
 }

@@ -14,4 +14,8 @@ final class NotchFacade {
         self.clipboardManager = clipboardManager
         self.slotConfiguration = slotConfiguration
     }
+
+    func recheckMediaInstallation() {
+        mediaController.recheckInstallation()
+    }
 }

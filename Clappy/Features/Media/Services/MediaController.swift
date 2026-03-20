@@ -3,176 +3,156 @@ import Combine
 import Foundation
 
 final class MediaController: ObservableObject {
-    @Published private(set) var nowPlaying = NowPlayingInfo()
+    @Published private(set) var nowPlaying: NowPlayingInfo? = nil
+    @Published private(set) var isToolInstalled: Bool = false
+    @Published private(set) var adapterPath: String? = nil
 
-    // MARK: - MediaRemote Function Types
-    private typealias MRNowPlayingInfoGetterBlock = @convention(c) (DispatchQueue, @escaping ([String: Any]) -> Void) -> Void
-    private typealias MRSendCommandBlock = @convention(c) (UInt32, UnsafeRawPointer?) -> Bool
-    private typealias MRRegisterNotificationsBlock = @convention(c) (DispatchQueue) -> Void
+    private var process: Process?
+    private var monitorTask: Task<Void, Never>?
+    private var restartCount = 0
+    private let maxRestarts = 3
 
-    // MARK: - MediaRemote Functions
-    private var mrGetNowPlayingInfo: MRNowPlayingInfoGetterBlock?
-    private var mrSendCommand: MRSendCommandBlock?
-    private var mrRegisterNotifications: MRRegisterNotificationsBlock?
-
-    // MARK: - Active Sources (Fix 7)
-    @Published private(set) var activeSourceCount: Int = 1
-    private var activeSources = Set<String>()
-
-    // MARK: - State
-    private var pollTimer: Timer?
-    private var cancellables = Set<AnyCancellable>()
-    private var isLoaded = false
-
-    // MARK: - MediaRemote Commands
-    private enum Command: UInt32 {
-        case togglePlayPause = 2
-        case nextTrack = 4
-        case previousTrack = 5
-    }
+    private static let candidatePaths = [
+        "/opt/homebrew/bin/media-control",   // Apple Silicon
+        "/usr/local/bin/media-control"        // Intel
+    ]
 
     init() {
-        loadMediaRemote()
-        if isLoaded {
-            registerNotifications()
-            startPolling()
-            fetchNowPlayingInfo()
+        detectAdapter()
+        if let path = adapterPath {
+            startListening(path: path)
         }
     }
 
     deinit {
-        pollTimer?.invalidate()
+        stopListening()
     }
 
     // MARK: - Public Controls
 
-    func togglePlayPause() {
-        sendCommand(.togglePlayPause)
+    func togglePlayPause() { sendCommand("toggle-play-pause") }
+    func nextTrack()       { sendCommand("next-track") }
+    func previousTrack()   { sendCommand("previous-track") }
+
+    func recheckInstallation() {
+        detectAdapter()
+        if let path = adapterPath, process == nil {
+            restartCount = 0
+            startListening(path: path)
+        }
     }
 
-    func nextTrack() {
-        sendCommand(.nextTrack)
-    }
-
-    func previousTrack() {
-        sendCommand(.previousTrack)
+    func stopListening() {
+        monitorTask?.cancel()
+        monitorTask = nil
+        if let proc = process, proc.isRunning {
+            proc.terminate()
+        }
+        process = nil
     }
 
     // MARK: - Private
 
-    private func loadMediaRemote() {
-        let path = "/System/Library/PrivateFrameworks/MediaRemote.framework/MediaRemote"
-        guard let bundle = CFBundleCreate(kCFAllocatorDefault, URL(fileURLWithPath: path) as CFURL) else {
+    private func detectAdapter() {
+        let found = Self.candidatePaths.first {
+            FileManager.default.isExecutableFile(atPath: $0)
+        }
+        adapterPath = found
+        isToolInstalled = found != nil
+    }
+
+    private func startListening(path: String) {
+        stopListening()
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: path)
+        proc.arguments = ["stream", "--no-diff"]
+
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = Pipe()
+
+        proc.terminationHandler = { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self, self.restartCount < self.maxRestarts else { return }
+                self.restartCount += 1
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                    guard let self, let path = self.adapterPath else { return }
+                    self.startListening(path: path)
+                }
+            }
+        }
+
+        do {
+            try proc.run()
+        } catch {
+            print("[MediaController] Failed to launch media-control: \(error)")
+            return
+        }
+        self.process = proc
+
+        monitorTask = Task { [weak self] in
+            let handle = pipe.fileHandleForReading
+            do {
+                for try await line in handle.bytes.lines {
+                    guard !Task.isCancelled else { break }
+                    await MainActor.run {
+                        self?.handleEvent(line)
+                    }
+                }
+            } catch {
+                // Stream ended — terminationHandler will restart if needed
+            }
+        }
+    }
+
+    // MARK: - JSON Parsing
+    // Stream format: {"type":"data","diff":bool,"payload":{...}}
+    // Payload keys: title, artist, album, duration, elapsedTime, playing, playbackRate, artworkData, timestamp
+
+    private func handleEvent(_ line: String) {
+        guard
+            let data = line.data(using: .utf8),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let type = json["type"] as? String,
+            type == "data",
+            let payload = json["payload"] as? [String: Any]
+        else { return }
+
+        // Empty payload means no media
+        guard let title = payload["title"] as? String, !title.isEmpty else {
+            nowPlaying = nil
             return
         }
 
-        mrGetNowPlayingInfo = loadFunction(bundle: bundle, name: "MRMediaRemoteGetNowPlayingInfo")
-        mrSendCommand = loadFunction(bundle: bundle, name: "MRMediaRemoteSendCommand")
-        mrRegisterNotifications = loadFunction(bundle: bundle, name: "MRMediaRemoteRegisterForNowPlayingNotifications")
+        let artwork: NSImage? = (payload["artworkData"] as? String)
+            .flatMap { Data(base64Encoded: $0) }
+            .flatMap { NSImage(data: $0) }
 
-        isLoaded = mrGetNowPlayingInfo != nil
+        let rate = payload["playbackRate"] as? Double ?? 0
+        let playing = payload["playing"] as? Bool ?? (rate > 0)
+
+        var info = NowPlayingInfo()
+        info.title = title
+        info.artist = payload["artist"] as? String ?? ""
+        info.album = payload["album"] as? String ?? ""
+        info.artwork = artwork
+        info.duration = payload["duration"] as? Double ?? 0
+        info.elapsed = payload["elapsedTime"] as? Double ?? 0
+        info.playbackRate = rate
+        info.isPlaying = playing
+        info.lastUpdated = Date()
+
+        nowPlaying = info
     }
 
-    private func loadFunction<T>(bundle: CFBundle, name: String) -> T? {
-        guard let pointer = CFBundleGetFunctionPointerForName(bundle, name as CFString) else {
-            return nil
-        }
-        return unsafeBitCast(pointer, to: T.self)
-    }
-
-    private func registerNotifications() {
-        mrRegisterNotifications?(DispatchQueue.main)
-
-        // MediaRemote posts to DistributedNotificationCenter, not NotificationCenter.default
-        DistributedNotificationCenter.default().publisher(
-            for: NSNotification.Name("kMRMediaRemoteNowPlayingInfoDidChangeNotification")
-        )
-        .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
-        .sink { [weak self] _ in
-            self?.fetchNowPlayingInfo()
-        }
-        .store(in: &cancellables)
-
-        DistributedNotificationCenter.default().publisher(
-            for: NSNotification.Name("kMRMediaRemoteNowPlayingApplicationIsPlayingDidChangeNotification")
-        )
-        .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
-        .sink { [weak self] _ in
-            self?.fetchNowPlayingInfo()
-        }
-        .store(in: &cancellables)
-
-        // App-specific distributed notifications
-        DistributedNotificationCenter.default().publisher(
-            for: NSNotification.Name("com.apple.Music.playerInfo")
-        )
-        .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
-        .sink { [weak self] notification in
-            self?.handleAppNotification(notification, appName: "Music")
-        }
-        .store(in: &cancellables)
-
-        DistributedNotificationCenter.default().publisher(
-            for: NSNotification.Name("com.spotify.client.PlaybackStateChanged")
-        )
-        .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
-        .sink { [weak self] notification in
-            self?.handleAppNotification(notification, appName: "Spotify")
-        }
-        .store(in: &cancellables)
-    }
-
-    private func handleAppNotification(_ notification: Notification, appName: String) {
-        // Track active sources based on play/pause state
-        let playerState = notification.userInfo?["Player State"] as? String
-            ?? notification.userInfo?["playbackState"] as? String
-            ?? ""
-
-        if playerState.lowercased().contains("play") {
-            activeSources.insert(appName)
-        } else if playerState.lowercased().contains("pause") || playerState.lowercased().contains("stop") {
-            activeSources.remove(appName)
-        }
-        activeSourceCount = max(1, activeSources.count)
-
-        fetchNowPlayingInfo()
-    }
-
-    private func startPolling() {
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            // Adaptive polling: skip if we already have content
-            if !self.nowPlaying.hasContent {
-                self.fetchNowPlayingInfo()
-            }
-        }
-    }
-
-    private func fetchNowPlayingInfo() {
-        mrGetNowPlayingInfo?(DispatchQueue.main) { [weak self] info in
-            guard let self else { return }
-
-            var newInfo = NowPlayingInfo()
-            newInfo.title = info["kMRMediaRemoteNowPlayingInfoTitle"] as? String ?? ""
-            newInfo.artist = info["kMRMediaRemoteNowPlayingInfoArtist"] as? String ?? ""
-            newInfo.album = info["kMRMediaRemoteNowPlayingInfoAlbum"] as? String ?? ""
-            newInfo.duration = info["kMRMediaRemoteNowPlayingInfoDuration"] as? TimeInterval ?? 0
-            newInfo.elapsed = info["kMRMediaRemoteNowPlayingInfoElapsedTime"] as? TimeInterval ?? 0
-            newInfo.isPlaying = (info["kMRMediaRemoteNowPlayingInfoPlaybackRate"] as? Double ?? 0) > 0
-
-            if let artworkData = info["kMRMediaRemoteNowPlayingInfoArtworkData"] as? Data {
-                newInfo.artwork = NSImage(data: artworkData)
-            }
-
-            self.nowPlaying = newInfo
-        }
-    }
-
-    private func sendCommand(_ command: Command) {
-        _ = mrSendCommand?(command.rawValue, nil)
-        // Refresh state after a short delay to pick up the change
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.fetchNowPlayingInfo()
-        }
+    private func sendCommand(_ cmd: String) {
+        guard let path = adapterPath else { return }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: path)
+        proc.arguments = [cmd]
+        proc.standardOutput = Pipe()
+        proc.standardError = Pipe()
+        try? proc.run()
     }
 }

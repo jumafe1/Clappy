@@ -2,11 +2,15 @@ import Combine
 import Foundation
 
 final class MediaViewModel: ObservableObject {
-    @Published private(set) var nowPlaying = NowPlayingInfo()
-    @Published private(set) var sourceCount: Int = 1
+    @Published private(set) var nowPlaying: NowPlayingInfo? = nil
+    @Published private(set) var isToolInstalled: Bool = false
 
     private let mediaController: MediaController
     private var cancellables = Set<AnyCancellable>()
+
+    var progressFraction: Double {
+        nowPlaying?.progress ?? 0
+    }
 
     init(mediaController: MediaController) {
         self.mediaController = mediaController
@@ -15,9 +19,9 @@ final class MediaViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .assign(to: &$nowPlaying)
 
-        mediaController.$activeSourceCount
+        mediaController.$isToolInstalled
             .receive(on: DispatchQueue.main)
-            .assign(to: &$sourceCount)
+            .assign(to: &$isToolInstalled)
     }
 
     func togglePlayPause() {
@@ -30,5 +34,9 @@ final class MediaViewModel: ObservableObject {
 
     func previousTrack() {
         mediaController.previousTrack()
+    }
+
+    func recheckInstallation() {
+        mediaController.recheckInstallation()
     }
 }

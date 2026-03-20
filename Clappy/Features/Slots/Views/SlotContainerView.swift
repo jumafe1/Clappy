@@ -11,17 +11,14 @@ struct SlotContainerView: View {
                 slotView(for: slot.type)
             }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: mediaViewModel.nowPlaying.hasContent)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: mediaViewModel.nowPlaying != nil)
     }
 
     @ViewBuilder
     private func slotView(for type: SlotType) -> some View {
         switch type {
         case .media:
-            if mediaViewModel.nowPlaying.hasContent {
-                MediaPlayerView(viewModel: mediaViewModel)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+            MediaPlayerView(viewModel: mediaViewModel)
         case .clipboard:
             ClipboardView(viewModel: clipboardViewModel)
         }

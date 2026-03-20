@@ -30,6 +30,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observeScreenChanges()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        facade?.mediaController.stopListening()
+    }
+
     // MARK: - Status Bar
 
     private func setupStatusBar() {
