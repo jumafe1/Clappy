@@ -101,6 +101,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] hovering in
                 self?.notchContentViewModel.isExpanded = hovering
+                (self?.notchWindowController?.window as? NotchPanel)?.isExpanded = hovering
+            }
+            .store(in: &cancellables)
+
+        notchContentViewModel.$contentHeight
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] height in
+                self?.notchWindowController?.setContentHeight(height)
             }
             .store(in: &cancellables)
     }

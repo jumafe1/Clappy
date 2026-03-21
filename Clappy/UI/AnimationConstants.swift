@@ -21,4 +21,13 @@ enum AnimationConstants {
 
     // MARK: - Padding
     static let contentPadding: CGFloat = 12
+
+    // MARK: - Dynamic Panel Heights
+    static let maxPanelHeight: CGFloat = 260
+    static let mediaPlayerHeight: CGFloat = 120
+    static let clipboardHeaderHeight: CGFloat = 32
+    static let clipboardRowHeight: CGFloat = 44
+    static let maxClipboardRows: Int = 3
+    // Total vertical padding consumed by expandedContent (.padding(contentPadding) + .padding(.top, collapsedHeight - 8))
+    static let panelVerticalPadding: CGFloat = contentPadding * 2 + (collapsedHeight - 8)
 }

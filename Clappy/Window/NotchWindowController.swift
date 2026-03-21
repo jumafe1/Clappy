@@ -47,6 +47,20 @@ final class NotchWindowController: NSWindowController {
         )
     }
 
+    /// Resize the panel height while keeping the top edge anchored to the screen top.
+    func setContentHeight(_ height: CGFloat) {
+        guard let window = window, let screen = NSScreen.main else { return }
+        let clamped = min(max(height, AnimationConstants.collapsedHeight), AnimationConstants.maxPanelHeight)
+        let topY = screen.frame.maxY
+        let newFrame = NSRect(
+            x: window.frame.origin.x,
+            y: topY - clamped,
+            width: window.frame.width,
+            height: clamped
+        )
+        window.setFrame(newFrame, display: true, animate: false)
+    }
+
     /// Compute the notch area using auxiliaryTopLeftArea and auxiliaryTopRightArea.
     /// The notch sits between the right edge of the left auxiliary area
     /// and the left edge of the right auxiliary area.

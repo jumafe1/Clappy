@@ -51,30 +51,31 @@ struct MediaPlayerView: View {
     // MARK: - Player
 
     private func playerView(info: NowPlayingInfo) -> some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .bottom, spacing: 12) {
             artworkView(artwork: info.artwork)
-                .frame(width: 80, height: 80)
+                .frame(width: 72, height: 72)
                 .cornerRadius(10)
 
-            VStack(alignment: .leading, spacing: 4) {
-                MarqueeText(text: info.title)
-                    .font(.system(size: 13, weight: .semibold))
+            VStack(alignment: .leading, spacing: 2) {
+                Spacer(minLength: 0)
+
+                ScrollingTextView(text: info.title, font: .system(size: 13, weight: .semibold))
                     .foregroundColor(.white)
                     .accessibilityLabel("Track: \(info.title)")
 
-                Text(artistAlbumText(info: info))
-                    .font(.system(size: 11))
+                ScrollingTextView(text: artistAlbumText(info: info), font: .system(size: 11))
                     .foregroundColor(.white.opacity(0.7))
-                    .lineLimit(1)
                     .accessibilityLabel("Artist: \(info.artist)")
-
-                Spacer(minLength: 2)
 
                 progressBar(fraction: info.progress)
 
                 controlButtons(isPlaying: info.isPlaying)
             }
+            .frame(maxHeight: .infinity)
+
+            Spacer()
         }
+        .frame(height: 72)
         .padding(8)
     }
 
@@ -157,58 +158,6 @@ struct MediaPlayerView: View {
             .accessibilityLabel("Next track")
 
             Spacer()
-        }
-    }
-}
-
-// MARK: - Marquee Text
-
-struct MarqueeText: View {
-    let text: String
-    @State private var offset: CGFloat = 0
-    @State private var textWidth: CGFloat = 0
-    @State private var containerWidth: CGFloat = 0
-
-    var body: some View {
-        GeometryReader { geometry in
-            let needsScroll = textWidth > geometry.size.width
-
-            Text(text)
-                .lineLimit(1)
-                .fixedSize()
-                .background(
-                    GeometryReader { textGeometry in
-                        Color.clear.onAppear {
-                            textWidth = textGeometry.size.width
-                            containerWidth = geometry.size.width
-                        }
-                    }
-                )
-                .offset(x: needsScroll ? offset : 0)
-                .onAppear {
-                    guard needsScroll else { return }
-                    startAnimation()
-                }
-                .onChange(of: text) {
-                    offset = 0
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                        startAnimation()
-                    }
-                }
-        }
-        .clipped()
-        .frame(height: 16)
-    }
-
-    private func startAnimation() {
-        guard textWidth > containerWidth else { return }
-        let distance = textWidth - containerWidth
-        withAnimation(
-            .linear(duration: Double(distance) / 30)
-            .delay(1)
-            .repeatForever(autoreverses: true)
-        ) {
-            offset = -distance
         }
     }
 }

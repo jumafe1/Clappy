@@ -2,6 +2,12 @@ import AppKit
 
 final class NotchPanel: NSPanel {
 
+    /// Mirrors the expand/collapse state. When false (collapsed), the panel is fully
+    /// transparent to mouse events so clicks pass through to apps beneath.
+    var isExpanded: Bool = false {
+        didSet { ignoresMouseEvents = !isExpanded }
+    }
+
     override init(
         contentRect: NSRect,
         styleMask style: NSWindow.StyleMask,
@@ -24,6 +30,6 @@ final class NotchPanel: NSPanel {
         isMovableByWindowBackground = false
         hidesOnDeactivate = false
         acceptsMouseMovedEvents = true
-        ignoresMouseEvents = false
+        ignoresMouseEvents = true  // start collapsed — clicks pass through until expanded
     }
 }
