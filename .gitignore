@@ -11,16 +11,25 @@ Package.resolved
 
 # Claude Code
 .claude/
+claude.md
+CLAUDE.md
+context.md
 
 # macOS
 .DS_Store
 *.swp
 *~
+.Trashes
+._*
 
 # Xcode
 xcuserdata/
 *.xcscmblueprint
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xccheckout
 
 # Tasks (local workflow)
 tasks/
-context

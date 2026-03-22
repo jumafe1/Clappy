@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Window Layer
     private var notchWindowController: NotchWindowController?
     private var hoverMonitor: NotchHoverMonitor?
+    private var miniAlbumArtController: MiniAlbumArtController?
 
     // MARK: - View Models
     private let notchContentViewModel = NotchContentViewModel()
@@ -89,6 +90,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         notchWindowController = NotchWindowController(contentView: contentView)
         notchWindowController?.showWindow(nil)
+
+        if let controller = notchWindowController {
+            miniAlbumArtController = MiniAlbumArtController(
+                mediaViewModel: mediaViewModel,
+                windowController: controller
+            )
+        }
     }
 
     // MARK: - Hover Monitor

@@ -48,43 +48,60 @@ struct NotchContentView: View {
         viewModel.isExpanded ? computedContentHeight : AnimationConstants.collapsedHeight
     }
 
-    /// Computes the panel height based on which slots are visible and how much content they have.
+    /// Panel height = fixed chrome (padding + compact header) + active tab content height.
     private var computedContentHeight: CGFloat {
+        let chrome = AnimationConstants.panelVerticalPadding
+            + AnimationConstants.headerRowHeight
+            + AnimationConstants.headerSeparatorHeight
+            + AnimationConstants.headerBottomGap
+
         let enabledTypes = Set(slotsViewModel.enabledSlots.map { $0.type })
-        let mediaEnabled = enabledTypes.contains(.media)
-        let clipboardEnabled = enabledTypes.contains(.clipboard)
+        let contentH: CGFloat
 
-        let mediaIsVisible = mediaEnabled && (!mediaViewModel.isToolInstalled || mediaViewModel.nowPlaying != nil)
-        let clipboardHasItems = clipboardEnabled && !clipboardViewModel.items.isEmpty
+        switch viewModel.activeTab {
+        case .media:
+            let mediaEnabled = enabledTypes.contains(.media)
+            let mediaVisible = mediaEnabled
+                && (!mediaViewModel.isToolInstalled || mediaViewModel.nowPlaying != nil)
+            contentH = mediaVisible ? AnimationConstants.mediaPlayerHeight : 0
 
-        var height = AnimationConstants.panelVerticalPadding
-
-        if mediaIsVisible {
-            height += AnimationConstants.mediaPlayerHeight
+        case .clipboard:
+            let clipEnabled = enabledTypes.contains(.clipboard)
+            if clipEnabled {
+                if clipboardViewModel.items.isEmpty {
+                    contentH = AnimationConstants.clipboardEmptyStateHeight
+                } else {
+                    let rows = min(clipboardViewModel.items.count, AnimationConstants.maxClipboardRows)
+                    contentH = AnimationConstants.clipboardHeaderHeight
+                        + CGFloat(rows) * AnimationConstants.clipboardRowHeight
+                }
+            } else {
+                contentH = 0
+            }
         }
 
-        if clipboardHasItems {
-            height += AnimationConstants.clipboardHeaderHeight
-            let rows = min(clipboardViewModel.items.count, AnimationConstants.maxClipboardRows)
-            height += CGFloat(rows) * AnimationConstants.clipboardRowHeight
-        }
-
-        // If nothing is visible, keep the notch pill size
-        if height <= AnimationConstants.panelVerticalPadding {
-            return AnimationConstants.collapsedHeight
-        }
-
-        return min(height, AnimationConstants.maxPanelHeight)
+        return min(chrome + contentH, AnimationConstants.maxPanelHeight)
     }
 
     // MARK: - Expanded Content
 
     private var expandedContent: some View {
-        SlotContainerView(
-            slotsViewModel: slotsViewModel,
-            mediaViewModel: mediaViewModel,
-            clipboardViewModel: clipboardViewModel
-        )
+        VStack(spacing: 0) {
+            // Compact header: "Clappy" label + tab icons + thin separator
+            CompactHeaderView(activeTab: $viewModel.activeTab)
+                .padding(.bottom, AnimationConstants.headerBottomGap)
+
+            // Active tab content
+            Group {
+                switch viewModel.activeTab {
+                case .media:
+                    MediaPlayerView(viewModel: mediaViewModel)
+                case .clipboard:
+                    ClipboardView(viewModel: clipboardViewModel)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
         .padding(AnimationConstants.contentPadding)
         .padding(.top, AnimationConstants.collapsedHeight - 8)
     }
