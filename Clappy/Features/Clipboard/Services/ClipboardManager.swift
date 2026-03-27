@@ -49,9 +49,11 @@ final class ClipboardManager: ObservableObject {
     // MARK: - Private
 
     private func startPolling() {
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.checkForChanges()
         }
+        RunLoop.main.add(timer, forMode: .common)
+        pollTimer = timer
     }
 
     private func checkForChanges() {
@@ -75,9 +77,11 @@ final class ClipboardManager: ObservableObject {
         // Image
         if let imageData = pasteboard.data(forType: .tiff) {
             let downscaled = downscaleImageData(imageData)
-            let item = ClipboardItem(imageData: downscaled)
-            items.insert(item, at: 0)
-            trimAndSave()
+            if items.first?.imageData != downscaled {
+                let item = ClipboardItem(imageData: downscaled)
+                items.insert(item, at: 0)
+                trimAndSave()
+            }
         }
     }
 

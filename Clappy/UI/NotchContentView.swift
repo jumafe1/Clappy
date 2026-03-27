@@ -7,12 +7,13 @@ struct NotchContentView: View {
     @ObservedObject var slotsViewModel: SlotsViewModel
 
     var body: some View {
+        let height = currentHeight
         ZStack(alignment: .top) {
             // Background
             PanelBackground()
                 .frame(
                     width: currentWidth,
-                    height: currentHeight
+                    height: height
                 )
 
             // Content
@@ -20,20 +21,20 @@ struct NotchContentView: View {
                 expandedContent
                     .frame(
                         width: AnimationConstants.expandedWidth,
-                        height: currentHeight
+                        height: height
                     )
                     .transition(.opacity)
             }
         }
         .frame(
             width: AnimationConstants.expandedWidth,
-            height: currentHeight,
+            height: height,
             alignment: .top
         )
         .animation(AnimationConstants.spring, value: viewModel.isExpanded)
-        .animation(AnimationConstants.spring, value: currentHeight)
-        .onAppear { viewModel.contentHeight = currentHeight }
-        .onChange(of: currentHeight) { _, h in viewModel.contentHeight = h }
+        .animation(AnimationConstants.spring, value: height)
+        .onAppear { viewModel.contentHeight = height }
+        .onChange(of: height) { _, h in viewModel.contentHeight = h }
     }
 
     // MARK: - Computed Properties
@@ -61,9 +62,15 @@ struct NotchContentView: View {
         switch viewModel.activeTab {
         case .media:
             let mediaEnabled = enabledTypes.contains(.media)
-            let mediaVisible = mediaEnabled
-                && (!mediaViewModel.isToolInstalled || mediaViewModel.nowPlaying != nil)
-            contentH = mediaVisible ? AnimationConstants.mediaPlayerHeight : 0
+            if mediaEnabled {
+                if !mediaViewModel.isToolInstalled || mediaViewModel.nowPlaying != nil {
+                    contentH = AnimationConstants.mediaPlayerHeight
+                } else {
+                    contentH = AnimationConstants.clipboardEmptyStateHeight
+                }
+            } else {
+                contentH = 0
+            }
 
         case .clipboard:
             let clipEnabled = enabledTypes.contains(.clipboard)

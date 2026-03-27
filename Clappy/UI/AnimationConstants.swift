@@ -24,7 +24,7 @@ enum AnimationConstants {
 
     // MARK: - Dynamic Panel Heights
     static let maxPanelHeight: CGFloat = 216
-    static let mediaPlayerHeight: CGFloat = 120
+    static let mediaPlayerHeight: CGFloat = 88
     static let clipboardHeaderHeight: CGFloat = 32
     static let clipboardRowHeight: CGFloat = 44
     static let clipboardEmptyStateHeight: CGFloat = 40

@@ -106,7 +106,39 @@ struct ClipboardView: View {
     // MARK: - Row
 
     private func clipboardRow(_ item: ClipboardItem) -> some View {
-        Button(action: { viewModel.recopy(item) }) {
+        ClipboardRowView(item: item, viewModel: viewModel)
+    }
+
+    // MARK: - Image Thumbnail
+
+    @ViewBuilder
+    private func thumbnailView(data: Data) -> some View {
+        if let nsImage = NSImage(data: data) {
+            Image(nsImage: nsImage)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 32, height: 32)
+                .clipped()
+                .cornerRadius(4)
+        } else {
+            Image(systemName: "photo")
+                .font(.system(size: 10))
+                .foregroundColor(.white.opacity(0.5))
+                .frame(width: 32, height: 32)
+        }
+    }
+}
+
+// MARK: - Row View
+
+private struct ClipboardRowView: View {
+    let item: ClipboardItem
+    let viewModel: ClipboardViewModel
+    @State private var copied = false
+    @State private var copyTask: Task<Void, Never>?
+
+    var body: some View {
+        Button(action: triggerCopy) {
             HStack(spacing: 8) {
                 // Thumbnail or icon
                 if let imageData = item.imageData {
@@ -124,14 +156,11 @@ struct ClipboardView: View {
                     Spacer()
                 }
 
-                // Copy button
-                Button(action: { viewModel.recopy(item) }) {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 9))
-                        .foregroundColor(.white.opacity(0.5))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Copy item")
+                // Copy / checkmark indicator
+                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 9))
+                    .foregroundColor(copied ? .green.opacity(0.9) : .white.opacity(0.5))
+                    .animation(.easeInOut(duration: 0.15), value: copied)
 
                 // Delete button
                 Button(action: { viewModel.delete(item) }) {
@@ -144,14 +173,24 @@ struct ClipboardView: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(Color.white.opacity(0.05))
+            .background(copied ? Color.green.opacity(0.12) : Color.white.opacity(0.05))
             .cornerRadius(4)
+            .animation(.easeInOut(duration: 0.15), value: copied)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Re-copy: \(item.preview)")
     }
 
-    // MARK: - Image Thumbnail
+    private func triggerCopy() {
+        viewModel.recopy(item)
+        copied = true
+        copyTask?.cancel()
+        copyTask = Task {
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled else { return }
+            copied = false
+        }
+    }
 
     @ViewBuilder
     private func thumbnailView(data: Data) -> some View {

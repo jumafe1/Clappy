@@ -4,16 +4,26 @@ struct MediaPlayerView: View {
     @ObservedObject var viewModel: MediaViewModel
 
     var body: some View {
-        Group {
-            if !viewModel.isToolInstalled {
-                notInstalledView
-            } else if let info = viewModel.nowPlaying {
-                playerView(info: info)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Media")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white)
+                Spacer()
             }
-            // When installed but nothing playing: show nothing
+
+            Group {
+                if !viewModel.isToolInstalled {
+                    notInstalledView
+                } else if let info = viewModel.nowPlaying {
+                    playerView(info: info)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                } else {
+                    nothingPlayingView
+                }
+            }
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: viewModel.nowPlaying != nil)
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: viewModel.nowPlaying != nil)
     }
 
     // MARK: - Not Installed
@@ -46,6 +56,16 @@ struct MediaPlayerView: View {
             .buttonStyle(.plain)
         }
         .padding(8)
+    }
+
+    // MARK: - Nothing Playing
+
+    private var nothingPlayingView: some View {
+        Text("No media playing")
+            .font(.system(size: 11))
+            .foregroundColor(.white.opacity(0.4))
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, 8)
     }
 
     // MARK: - Player

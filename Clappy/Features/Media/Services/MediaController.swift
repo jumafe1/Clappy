@@ -75,6 +75,7 @@ final class MediaController: ObservableObject {
         proc.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self, self.restartCount < self.maxRestarts else { return }
+                guard self.process == nil else { return }
                 self.restartCount += 1
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
                     guard let self, let path = self.adapterPath else { return }
